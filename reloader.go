@@ -57,7 +57,7 @@ type RemoteConfig struct {
 }
 
 // RemoteChrome starts a new chrome remote debugging session
-func RemoteChrome(rc *RemoteConfig) error {
+func RemoteChrome(rc *RemoteConfig) chan error {
 	return rc.remoteChrome()
 }
 
@@ -73,35 +73,84 @@ func RemoteChromeDefault() error {
 	return rc.remoteChrome()
 }
 
-func (rc *RemoteConfig) remoteChrome() error {
-	cmd := fmt.Sprintf("%s --remote-debugging-port=%d --user-data-dir=%s http://%s:%d",
-		rc.ExecName, rc.Port, rc.UserDataDir, rc.OriginAddr, rc.OriginPort)
+func (rc *RemoteConfig) remoteChrome() chan error {
+	cmd := exec.Command(
+		rc.ExecName,
+		"--remote-debugging-port", rc.Port,
+		"--user-data-dir", rc.UserDataDir,
+		fmt.Sprintf("http://%s:%d", rc.OriginAddr, rc.OriginPort),
+	)
+
+	errChan := make(chan error)
 
 	go func() {
-
+		if err := cmd.Run(); err != nil {
+			errChan <- err
+		}
+		errChan <- nil
 	}()
 
-	return nil
+	return errChan
 }
 
-// ReloadTab reloads one chrome tab
-func ReloadTab() error {
-	apiURL := fmt.Sprintf("http://localhost:%d/json", 9222)
-	resp, err := http.Get(apiURL)
+// ReloadAllTabs will reload all opened tabs
+func (rc *RemoteConfig) ReloadAllTabs() error {
+	tabs, err := getTabs(rc.OriginAddr, rc.OriginPort)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
-	var tabs []ChromeTab
-	buffer, _ := ioutil.ReadAll(resp.Body)
-	err = json.Unmarshal(buffer, &tabs)
+	var err error
+	for _, tab := range tabs {
+		e := reloadTab(tab)
+		if e != nil {
+			err = e
+		}
+	}
+	return e
+}
+
+// ReloadTab reloads one chrome tab by checking if the tab URL has route as suffix
+func ReloadTab(route string) error {
+	tabs, err := getTabs(rc.OriginAddr, rc.OriginPort)
 	if err != nil {
 		return err
 	}
 
-	//for _, tab := range tabs {
-	url := tabs[0].WebSocketDebuggerURL
-	origin := tabs[0].URL
+	for _, tab := range tabs {
+		if strings.HasSuffix(tab.URL, route) {
+			err := reloadTab(tab)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+
+}
+
+// ReloadTabGroup reloads a group of chrome tabs by checking if the tab URL contains the subroute
+func ReloadTabGroup(subroute string) error {
+	tabs, err := getTabs(rc.OriginAddr, rc.OriginPort)
+	if err != nil {
+		return err
+	}
+
+	var err error
+	for _, tab := range tabs {
+		if strings.Contains(tab.URL, subroute) {
+			e := reloadTab(tab)
+			if e != nil {
+				err = e
+			}
+		}
+	}
+	return err
+
+}
+
+func reloadTab(tab ChromeTab) error {
+	url := tab.WebSocketDebuggerURL
+	origin := tab.URL
 	ws, err := websocket.Dial(url, "", origin)
 	if err != nil {
 		return err
@@ -113,9 +162,21 @@ func ReloadTab() error {
 	if err != nil {
 		return err
 	}
-	//}
-
-	//  func Post(url, contentType string, body io.Reader) (resp *Response, err error)
-	// _, err = http.Post(url.String(), "application/json", strings.NewReader(string(jsonString)))
 	return nil
+}
+
+func getTabs(addr string, port int) ([]ChromeTab, error) {
+	resp, err := http.Get(fmt.Sprintf("http://%s:%d/json", addr, port))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var tabs []ChromeTab
+	buffer, _ := ioutil.ReadAll(resp.Body)
+	err = json.Unmarshal(buffer, &tabs)
+	if err != nil {
+		return nil, err
+	}
+	return tabs, nil
 }
