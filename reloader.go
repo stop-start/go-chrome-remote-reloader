@@ -1,23 +1,14 @@
 package reloader
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"golang.org/x/net/websocket"
 	"io/ioutil"
 	"net/http"
-	"os"
 	"os/exec"
-	"os/signal"
 	"strings"
-	"syscall"
-	"time"
-
-	"github.com/fsnotify/fsnotify"
-	"github.com/gorilla/mux"
-	log "github.com/sirupsen/logrus"
-	"github.com/urfave/cli"
-
-	"golang.org/x/net/websocket"
 )
 
 // Parameters  struct ...
@@ -50,68 +41,65 @@ type RemoteConfig struct {
 	Port int
 	// UserDataDir is the folder for chrome user profile
 	UserDataDir string
-	// OriginAddr is the address to be reloaded
+	// OriginAddr is the base address to be opened
 	OriginAddr string
-	// OriginPort is the port for the address to be reloaded
+	// OriginPort is the port for the base address to be opened
 	OriginPort int
+	//OriginRoute path to be opened
+	OriginRoute string
 }
 
 // RemoteChrome starts a new chrome remote debugging session
-func RemoteChrome(rc *RemoteConfig) chan error {
+func RemoteChrome(rc *RemoteConfig) (context.CancelFunc, error) {
 	return rc.remoteChrome()
 }
 
 // RemoteChromeDefault starts a new chrome remote debugging session with default port and user data directory
-func RemoteChromeDefault() error {
+func RemoteChromeDefault() (*RemoteConfig, context.CancelFunc, error) {
 	rc := &RemoteConfig{
-		ExecName:    "chromium", //TODO: change to google-chrome
+		ExecName:    "google-chrome",
 		Port:        9222,
-		UserDataDir: "~/.chrome-remote-profile",
+		UserDataDir: "/tmp/.chrome-remote-profile",
 		OriginAddr:  "localhost",
 		OriginPort:  8080,
+		OriginRoute: "",
 	}
-	return rc.remoteChrome()
+	p, err := rc.remoteChrome()
+	return rc, p, err
 }
 
-func (rc *RemoteConfig) remoteChrome() chan error {
-	cmd := exec.Command(
+func (rc *RemoteConfig) remoteChrome() (context.CancelFunc, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cmd := exec.CommandContext(
+		ctx,
 		rc.ExecName,
-		"--remote-debugging-port", rc.Port,
-		"--user-data-dir", rc.UserDataDir,
-		fmt.Sprintf("http://%s:%d", rc.OriginAddr, rc.OriginPort),
+		fmt.Sprintf("--remote-debugging-port=%d", rc.Port),
+		fmt.Sprintf("--user-data-dir=%s", rc.UserDataDir),
+		fmt.Sprintf("http://%s:%d%s", rc.OriginAddr, rc.OriginPort, rc.OriginRoute),
 	)
 
-	errChan := make(chan error)
-
-	go func() {
-		if err := cmd.Run(); err != nil {
-			errChan <- err
-		}
-		errChan <- nil
-	}()
-
-	return errChan
+	return cancel, cmd.Start()
 }
 
 // ReloadAllTabs will reload all opened tabs
 func (rc *RemoteConfig) ReloadAllTabs() error {
-	tabs, err := getTabs(rc.OriginAddr, rc.OriginPort)
+	tabs, err := getTabs(rc.OriginAddr, rc.Port)
 	if err != nil {
-		return err
+		return fmt.Errorf("error while getting tabs: %s", err)
 	}
-	var err error
+	var e error
 	for _, tab := range tabs {
-		e := reloadTab(tab)
-		if e != nil {
-			err = e
+		err := reloadTab(tab)
+		if err != nil {
+			e = fmt.Errorf("error while reloading tab: %s", err)
 		}
 	}
 	return e
 }
 
 // ReloadTab reloads one chrome tab by checking if the tab URL has route as suffix
-func ReloadTab(route string) error {
-	tabs, err := getTabs(rc.OriginAddr, rc.OriginPort)
+func (rc *RemoteConfig) ReloadTab(route string) error {
+	tabs, err := getTabs(rc.OriginAddr, rc.Port)
 	if err != nil {
 		return err
 	}
@@ -129,22 +117,22 @@ func ReloadTab(route string) error {
 }
 
 // ReloadTabGroup reloads a group of chrome tabs by checking if the tab URL contains the subroute
-func ReloadTabGroup(subroute string) error {
-	tabs, err := getTabs(rc.OriginAddr, rc.OriginPort)
+func (rc *RemoteConfig) ReloadTabGroup(subroute string) error {
+	tabs, err := getTabs(rc.OriginAddr, rc.Port)
 	if err != nil {
 		return err
 	}
 
-	var err error
+	var e error
 	for _, tab := range tabs {
 		if strings.Contains(tab.URL, subroute) {
-			e := reloadTab(tab)
-			if e != nil {
-				err = e
+			err := reloadTab(tab)
+			if err != nil {
+				e = err
 			}
 		}
 	}
-	return err
+	return e
 
 }
 
@@ -153,14 +141,17 @@ func reloadTab(tab ChromeTab) error {
 	origin := tab.URL
 	ws, err := websocket.Dial(url, "", origin)
 	if err != nil {
-		return err
+		return fmt.Errorf("error while connecting to socket: %s", err)
 	}
 
 	jsonStruct := &RefreshJSON{ID: 0, Method: "Page.reload", Params: Parameters{IgnoreCache: true}}
-	jsonString, _ := json.Marshal(jsonStruct)
+	jsonString, err := json.Marshal(jsonStruct)
+	if err != nil {
+		return fmt.Errorf("error while marshalling json: %s", err)
+	}
 	_, err = ws.Write(jsonString)
 	if err != nil {
-		return err
+		return fmt.Errorf("error while preparing json: %s", err)
 	}
 	return nil
 }
@@ -168,7 +159,7 @@ func reloadTab(tab ChromeTab) error {
 func getTabs(addr string, port int) ([]ChromeTab, error) {
 	resp, err := http.Get(fmt.Sprintf("http://%s:%d/json", addr, port))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error while getting tabs: %s", err)
 	}
 	defer resp.Body.Close()
 
@@ -176,7 +167,7 @@ func getTabs(addr string, port int) ([]ChromeTab, error) {
 	buffer, _ := ioutil.ReadAll(resp.Body)
 	err = json.Unmarshal(buffer, &tabs)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error while unmarshalling tabs: %s", err)
 	}
 	return tabs, nil
 }
