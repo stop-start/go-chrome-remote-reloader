@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"golang.org/x/net/websocket"
 	"io/ioutil"
 	"net/http"
 	"os/exec"
 	"strings"
+
+	"golang.org/x/net/websocket"
 )
 
 // Parameters  struct ...
@@ -49,13 +50,8 @@ type RemoteConfig struct {
 	OriginRoute string
 }
 
-// RemoteChrome starts a new chrome remote debugging session
-func RemoteChrome(rc *RemoteConfig) (context.CancelFunc, error) {
-	return rc.remoteChrome()
-}
-
-// RemoteChromeDefault starts a new chrome remote debugging session with default port and user data directory
-func RemoteChromeDefault() (*RemoteConfig, context.CancelFunc, error) {
+// RemoteConfigDefault returns a default config for RemoteChrome
+func RemoteConfigDefault() RemoteConfig {
 	rc := &RemoteConfig{
 		ExecName:    "google-chrome",
 		Port:        9222,
@@ -64,6 +60,16 @@ func RemoteChromeDefault() (*RemoteConfig, context.CancelFunc, error) {
 		OriginPort:  8080,
 		OriginRoute: "",
 	}
+}
+
+// RemoteChrome starts a new chrome remote debugging session
+func RemoteChrome(rc *RemoteConfig) (context.CancelFunc, error) {
+	return rc.remoteChrome()
+}
+
+// RemoteChromeDefault starts a new chrome remote debugging session with default port and user data directory
+func RemoteChromeDefault() (*RemoteConfig, context.CancelFunc, error) {
+	rc := RemoteConfigDefault()
 	p, err := rc.remoteChrome()
 	return rc, p, err
 }
