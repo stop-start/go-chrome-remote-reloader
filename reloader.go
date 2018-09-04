@@ -51,8 +51,8 @@ type RemoteConfig struct {
 }
 
 // RemoteConfigDefault returns a default config for RemoteChrome
-func RemoteConfigDefault() RemoteConfig {
-	return RemoteConfig{
+func RemoteConfigDefault() *RemoteConfig {
+	return &RemoteConfig{
 		ExecName:    "google-chrome",
 		Port:        9222,
 		UserDataDir: "/tmp/.chrome-remote-profile",
