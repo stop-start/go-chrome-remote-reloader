@@ -30,7 +30,7 @@ import(
     "gitlab.com/stop.start/go-chrome-remote-reload"
 )
 
-rc := RemoteConfigDefault()
+rc := NewRemoteConfig()
 rc.RemoteChrome()
 ```
 
