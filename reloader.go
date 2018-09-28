@@ -80,7 +80,7 @@ func (rc *RemoteConfig) RemoteChrome() (context.CancelFunc, error) {
 
 // ReloadAllTabs will reload all opened tabs
 func (rc *RemoteConfig) ReloadAllTabs() error {
-	return reloadTabs(rc.Addr, rc.DebugPort, nil, "")
+	return reloadTabs(rc.DebugAddr, rc.DebugPort, nil, "")
 }
 
 // ReloadTab reloads one chrome tab by checking if the tab URL has route as suffix
@@ -88,11 +88,24 @@ func (rc *RemoteConfig) ReloadTab(route string) error {
 	return reloadTabs(rc.DebugAddr, rc.DebugPort, strings.HasSuffix, route)
 }
 
-// ReloadTabGroup reloads a group of chrome tabs by checking if the tab URL contains the subroute
+// ReloadTabGroup reloads a group of chrome tabs under the partial route: /partial/route/tabs/to/reload
 func (rc *RemoteConfig) ReloadTabGroup(subroute string) error {
 	return reloadTabs(rc.DebugAddr, rc.DebugPort, strings.Contains, subroute)
 }
 
+// CloseAllTabs closes all opened tabs in browser (should close the browser)
+func (rc *RemoteConfig) CloseAllTabs() error {
+	return closeTabs(rc.DebugAddr, rc.DebugPort, nil, "")
+}
+
+// CloseTab closes a given tab
+func (rc *RemoteConfig) CloseTab(route string) error {
+	return closeTabs(rc.DebugAddr, rc.DebugPort, strings.HasSuffix, route)
+}
+
+// CloseTabGroup closes a group of chrome tabs under the partial route: /partial/route/tabs/to/close
+func (rc *RemoteConfig) CloseTabGroup(route string) error {
+	return closeTabs(rc.DebugAddr, rc.DebugPort, strings.Contains, route)
 }
 
 func reloadTabs(addr string, port int, conditionFunc func(string, string) bool, route string) error {
@@ -130,6 +143,32 @@ func reloadTab(tab chromeTab) error {
 	_, err = ws.Write(jsonString)
 	if err != nil {
 		return fmt.Errorf("error while preparing json: %s", err)
+	}
+	return nil
+}
+
+func closeTabs(addr string, port int, conditionFunc func(string, string) bool, route string) error {
+	tabs, err := getTabs(addr, port)
+	if err != nil {
+		return err
+	}
+
+	var e error
+	for _, tab := range tabs {
+		if conditionFunc == nil || conditionFunc(tab.URL, route) {
+			err := closeTab(addr, port, tab)
+			if err != nil {
+				e = err
+			}
+		}
+	}
+	return e
+}
+
+func closeTab(addr string, port int, tab chromeTab) error {
+	_, err := http.Get(fmt.Sprintf("http://%s:%d/json/close/%s", addr, port, tab.ID))
+	if err != nil {
+		return fmt.Errorf("error while close tab: %s", err)
 	}
 	return nil
 }
