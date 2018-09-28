@@ -16,16 +16,16 @@ import (
 type RemoteConfig struct {
 	// ExecName is the name of the chrome executable (e.g "google-chrome", "chromium")
 	ExecName string
-	// Port is the chrome remote debugging port, usually 9222
-	Port int
+	// DebugPort is the chrome remote debugging port, usually 9222
+	DebugPort int
 	// UserDataDir is the folder for chrome user profile
 	UserDataDir string
-	// OriginAddr is the base address to be opened
-	OriginAddr string
-	// OriginPort is the port for the base address to be opened
-	OriginPort int
-	//OriginRoute path to be opened
-	OriginRoute string
+	// Addr is the base address to be opened
+	Addr string
+	// Port is the port for the base address to be opened
+	Port int
+	// Route path to be opened
+	Route string
 }
 
 // json returned from chrome remote debugging api
@@ -49,38 +49,27 @@ type parameters struct {
 	IgnoreCache bool `json:"ignoreCache"`
 }
 
-// RemoteConfigDefault returns a default config for RemoteChrome
-func RemoteConfigDefault() *RemoteConfig {
+// NewRemoteConfig returns a default config for RemoteChrome
+func NewRemoteConfig() *RemoteConfig {
 	return &RemoteConfig{
 		ExecName:    "google-chrome",
-		Port:        9222,
+		DebugPort:   9222,
 		UserDataDir: "/tmp/.chrome-remote-profile",
-		OriginAddr:  "localhost",
-		OriginPort:  8080,
-		OriginRoute: "",
+		Addr:        "localhost",
+		Port:        8080,
+		Route:       "",
 	}
 }
 
 // RemoteChrome starts a new chrome remote debugging session
-func RemoteChrome(rc *RemoteConfig) (context.CancelFunc, error) {
-	return rc.remoteChrome()
-}
-
-// RemoteChromeDefault starts a new chrome remote debugging session with default port and user data directory
-func RemoteChromeDefault() (*RemoteConfig, context.CancelFunc, error) {
-	rc := RemoteConfigDefault()
-	p, err := rc.remoteChrome()
-	return rc, p, err
-}
-
-func (rc *RemoteConfig) remoteChrome() (context.CancelFunc, error) {
+func (rc *RemoteConfig) RemoteChrome() (context.CancelFunc, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(
 		ctx,
 		rc.ExecName,
 		fmt.Sprintf("--remote-debugging-port=%d", rc.Port),
 		fmt.Sprintf("--user-data-dir=%s", rc.UserDataDir),
-		fmt.Sprintf("http://%s:%d%s", rc.OriginAddr, rc.OriginPort, rc.OriginRoute),
+		fmt.Sprintf("http://%s:%d%s", rc.Addr, rc.Port, rc.Route),
 	)
 
 	return cancel, cmd.Start()
@@ -88,57 +77,36 @@ func (rc *RemoteConfig) remoteChrome() (context.CancelFunc, error) {
 
 // ReloadAllTabs will reload all opened tabs
 func (rc *RemoteConfig) ReloadAllTabs() error {
-	tabs, err := getTabs(rc.OriginAddr, rc.Port)
-	if err != nil {
-		return fmt.Errorf("error while getting tabs: %s", err)
-	}
-	var e error
-	for _, tab := range tabs {
-		err := reloadTab(tab)
-		if err != nil {
-			e = fmt.Errorf("error while reloading tab: %s", err)
-		}
-	}
-	return e
+	return reloadTabs(rc.Addr, rc.DebugPort, nil, "")
 }
 
 // ReloadTab reloads one chrome tab by checking if the tab URL has route as suffix
 func (rc *RemoteConfig) ReloadTab(route string) error {
-	tabs, err := getTabs(rc.OriginAddr, rc.Port)
-	if err != nil {
-		return err
-	}
-
-	for _, tab := range tabs {
-		if strings.HasSuffix(tab.URL, route) {
-			err := reloadTab(tab)
-			if err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-
+	return reloadTabs(rc.Addr, rc.DebugPort, strings.HasSuffix, route)
 }
 
 // ReloadTabGroup reloads a group of chrome tabs by checking if the tab URL contains the subroute
 func (rc *RemoteConfig) ReloadTabGroup(subroute string) error {
-	tabs, err := getTabs(rc.OriginAddr, rc.Port)
+	return reloadTabs(rc.Addr, rc.DebugPort, strings.Contains, subroute)
+}
+
+func reloadTabs(addr string, port int, conditionFunc func(string, string) bool, route string) error {
+	tabs, err := getTabs(addr, port)
 	if err != nil {
 		return err
 	}
 
 	var e error
 	for _, tab := range tabs {
-		if strings.Contains(tab.URL, subroute) {
+		if conditionFunc == nil || conditionFunc(tab.URL, route) {
 			err := reloadTab(tab)
 			if err != nil {
 				e = err
 			}
+
 		}
 	}
 	return e
-
 }
 
 func reloadTab(tab chromeTab) error {
