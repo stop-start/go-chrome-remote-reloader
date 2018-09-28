@@ -12,26 +12,6 @@ import (
 	"golang.org/x/net/websocket"
 )
 
-type parameters struct {
-	IgnoreCache bool `json:"ignoreCache"`
-}
-
-type refreshJSON struct {
-	ID     uint16     `json:"id"`
-	Method string     `json:"method"`
-	Params parameters `json:"params"`
-}
-
-// ChromeTab is the json returned from chrome remote debugging api
-type ChromeTab struct {
-	ID                   string `json:"id"`
-	Title                string `json:"title"`
-	Type                 string `json:"type"`
-	URL                  string `json:"url"`
-	WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
-	Description          string `json:"description"`
-}
-
 // RemoteConfig is the configuration used to start chrome remote debugging
 type RemoteConfig struct {
 	// ExecName is the name of the chrome executable (e.g "google-chrome", "chromium")
@@ -46,6 +26,27 @@ type RemoteConfig struct {
 	OriginPort int
 	//OriginRoute path to be opened
 	OriginRoute string
+}
+
+// json returned from chrome remote debugging api
+type chromeTab struct {
+	ID                   string `json:"id"`
+	Title                string `json:"title"`
+	Type                 string `json:"type"`
+	URL                  string `json:"url"`
+	WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
+	Description          string `json:"description"`
+}
+
+// sent to chrome debugging port to reload tabs
+type refreshJSON struct {
+	ID     uint16     `json:"id"`
+	Method string     `json:"method"`
+	Params parameters `json:"params"`
+}
+
+type parameters struct {
+	IgnoreCache bool `json:"ignoreCache"`
 }
 
 // RemoteConfigDefault returns a default config for RemoteChrome
@@ -140,7 +141,7 @@ func (rc *RemoteConfig) ReloadTabGroup(subroute string) error {
 
 }
 
-func reloadTab(tab ChromeTab) error {
+func reloadTab(tab chromeTab) error {
 	url := tab.WebSocketDebuggerURL
 	origin := tab.URL
 	ws, err := websocket.Dial(url, "", origin)
@@ -160,14 +161,14 @@ func reloadTab(tab ChromeTab) error {
 	return nil
 }
 
-func getTabs(addr string, port int) ([]ChromeTab, error) {
+func getTabs(addr string, port int) ([]chromeTab, error) {
 	resp, err := http.Get(fmt.Sprintf("http://%s:%d/json", addr, port))
 	if err != nil {
 		return nil, fmt.Errorf("error while getting tabs: %s", err)
 	}
 	defer resp.Body.Close()
 
-	var tabs []ChromeTab
+	var tabs []chromeTab
 	buffer, _ := ioutil.ReadAll(resp.Body)
 	err = json.Unmarshal(buffer, &tabs)
 	if err != nil {
