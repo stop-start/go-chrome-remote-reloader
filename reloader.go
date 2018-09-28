@@ -12,16 +12,14 @@ import (
 	"golang.org/x/net/websocket"
 )
 
-// Parameters  struct ...
-type Parameters struct {
+type parameters struct {
 	IgnoreCache bool `json:"ignoreCache"`
 }
 
-// RefreshJSON struct ...
-type RefreshJSON struct {
+type refreshJSON struct {
 	ID     uint16     `json:"id"`
 	Method string     `json:"method"`
-	Params Parameters `json:"params"`
+	Params parameters `json:"params"`
 }
 
 // ChromeTab is the json returned from chrome remote debugging api
@@ -150,7 +148,7 @@ func reloadTab(tab ChromeTab) error {
 		return fmt.Errorf("error while connecting to socket: %s", err)
 	}
 
-	jsonStruct := &RefreshJSON{ID: 0, Method: "Page.reload", Params: Parameters{IgnoreCache: true}}
+	jsonStruct := &refreshJSON{ID: 0, Method: "Page.reload", Params: parameters{IgnoreCache: true}}
 	jsonString, err := json.Marshal(jsonStruct)
 	if err != nil {
 		return fmt.Errorf("error while marshalling json: %s", err)
