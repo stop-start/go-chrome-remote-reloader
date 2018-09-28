@@ -17,10 +17,11 @@ go get gitlab.com/stop.start/go-chrome-remote-reload
 
 ## Getting started
 
-### Default session
+RemoteConfig structure configures Chrome's remote debugging protocol and is used to open a new window as well as reload and close tabs.
+The remote debugging protocol can be used also with Chromium or any Chrome-like browser supporting this protocol.
+See [documetation](https://godoc.org/gitlab.com/stop.start/go-chrome-remote-reload#RemoteConfig) for details on the configuration.
 
-RemoteChromeDefault method allows to open a new Chrome window with default configuration.  
-The code below will open the browser on localhost:8080. 
+The following will get the default config and open the browser on localhost:8080:
 
 ```go
 package main
@@ -29,35 +30,73 @@ import(
     "gitlab.com/stop.start/go-chrome-remote-reload"
 )
 
-rc, _, err := RemoteChromeDefault() 
+rc := RemoteConfigDefault()
+rc.RemoteChrome()
 ```
 
-The following code will reload all opened tabs (here just the one created):
+To reload the only opened tab ReloadAllTabs is the easiest:
 
 ```go
 rc.ReloadAllTabs()
 ```
 
-### Custom configuration
+## Examples
 
-RemoteConfig structure configures Chrome's remote debugging protocol and is used to open a new window as well as reload tabs.
-
-The remote debugging protocol can be used also with Chromium or any Chrome-like browser supporting this protocol.
-
-The following will get the default config, change the browser executable and open the browser on localhost:8080:
+Use chromium instead of chrome:
 
 ```go
-package main
-
-import(
-    "gitlab.com/stop.start/go-chrome-remote-reload"
-)
-
-rc := RemoteConfigDefault() 
+rc := RemoteConfigDefault()
 rc.ExecName = "chromium"
 rc.RemoteChrome()
 ```
 
-See [documetation](https://godoc.org/gitlab.com/stop.start/go-chrome-remote-reload#RemoteConfig) for details on the configuration.
+Open two tabs and reload one of them:
+
+```go
+rc := reloader.NewRemoteConfig()
+
+rc.Addr = "google.com"
+rc.Port = 80
+rc.RemoteChrome()
+
+rc.Addr = "github.com"
+rc.Port = 80 // not required since already set but more readable.
+rc.RemoteChrome()
+
+rc.ReloadTab("github.com/")
+```
+
+Reload tabs under same path:
+Here only github.com/golang/go won't reload.
+
+```go
+rc := reloader.NewRemoteConfig()
+
+rc.Addr = "github.com"
+	rc.Port = 80
+	rc.Route = "/golang/go"
+	rc.RemoteChrome()
+
+	rc.Addr = "github.com"
+	rc.Port = 80
+	rc.Route = "/golang/go/tree/master/misc"
+	rc.RemoteChrome()
+
+	rc.Addr = "github.com"
+	rc.Port = 80
+	rc.Route = "/golang/go/tree/master/test"
+	rc.RemoteChrome()
+
+rc.ReloadTab("tree/")
+```
+
+Close all tabs which also means closing Chrome :
+
+```go
+rc.CloseAllTabs()
+```
+
+
+
 
 
